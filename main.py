@@ -1,10 +1,12 @@
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 import re
+
 
 
 def get_total_pages():
     url = "https://anzeninfo.mhlw.go.jp/anzen_pg/SAI_LST.aspx?gyosyu=3"
+    print(f"url: {url}")
     response = requests.get(url)
     response.raise_for_status()
     soup = BeautifulSoup(response.text, "html.parser")
@@ -47,7 +49,53 @@ def get_all_case_ids():
         all_case_ids.extend(case_ids)
     return all_case_ids
 
+def get_case_detail(case_id):
+    url = f"https://anzeninfo.mhlw.go.jp/anzen_pg/SAI_DET.aspx?joho_no={case_id}"
+    response = requests.get(url)
+    response.raise_for_status()
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    # 「発生状況」「原因」「対策」を抽出
+    def extract_text(section_title):
+        # h4タグでセクションタイトルを探す
+        h4 = soup.find("h4", string=section_title)
+        if h4:
+            # h4の直後のtableを取得
+            table = h4.find_next_sibling("table")
+            if table and isinstance(table, Tag):
+                # table内のtd要素を取得（複数のtdがある場合は全て結合）
+                tds = table.find_all("td")
+                if tds:
+                    # 全てのtdのテキストを結合
+                    texts = []
+                    for td in tds:
+                        if isinstance(td, Tag):
+                            text = td.get_text(separator='\n', strip=True)
+                            if text:
+                                texts.append(text)
+                    return '\n'.join(texts)
+        return None
+
+    return {
+        "id": case_id,
+        "発生状況": extract_text("発生状況"),
+        "原因": extract_text("原因"),
+        "対策": extract_text("対策"),
+    }
+
+def get_all_case_details(case_ids):
+    details = []
+    for i, case_id in enumerate(case_ids):
+        print(f"詳細取得中: {i+1}/{len(case_ids)} - ID: {case_id}")
+        detail = get_case_detail(case_id)
+        details.append(detail)
+    return details
+
 if __name__ == "__main__":
     case_ids = get_all_case_ids()
     print(f"件数: {len(case_ids)}")
     print(case_ids)
+    # 例として最初の3件だけ詳細を取得
+    details = get_all_case_details(case_ids[:3])
+    import json
+    print(json.dumps(details, ensure_ascii=False, indent=2))
